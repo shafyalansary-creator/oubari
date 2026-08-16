@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نظام إدارة الأفراد — سرية أوباري</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg:#0B120D; --surface:#101A12; --raised:#16241A; --input:#0E1710;
+  --gold:#C9A24B; --gold-light:#E3C878; --gold-border:rgba(201,162,75,0.25);
+  --text:#EDEAE0; --muted:#9AA692; --faint:#5F6B5C;
+  --success:#5FA86F; --danger:#D45A5A; --warning:#D9A441; --info:#5B8DEF;
+}
+body { font-family:'Cairo',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+#watermark { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; z-index:0; }
+#watermark img { width:min(72vw,540px); opacity:0.05; filter:grayscale(25%); }
+.view { display:none; position:relative; z-index:1; min-height:100vh; }
+.view.active { display:block; }
+button { font-family:'Cairo',sans-serif; cursor:pointer; }
+input, select, textarea { font-family:'Cairo',sans-serif; }
+
+/* ===== الأزرار ===== */
+.btn { padding:11px 20px; border-radius:9px; border:none; font-size:14px; font-weight:700; transition:0.2s; display:inline-flex; align-items:center; gap:7px; justify-content:center; }
+.btn-gold { background:linear-gradient(135deg,#C9A24B,#E3C878 45%,#A9823A); color:#141A0E; box-shadow:0 4px 14px rgba(201,162,75,0.25); }
+.btn-gold:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(201,162,75,0.4); }
+.btn-ghost { background:transparent; border:1px solid var(--gold-border); color:var(--gold); }
+.btn-ghost:hover { background:rgba(201,162,75,0.1); }
+.btn-danger { background:transparent; border:1px solid var(--danger); color:#e89a9a; }
+.btn-danger:hover { background:rgba(212,90,90,0.15); }
+.btn-danger-solid { background:var(--danger); color:#fff; border:none; }
+.btn:disabled { opacity:0.4; cursor:not-allowed; transform:none!important; }
+.btn-sm { padding:7px 12px; font-size:12.5px; border-radius:7px; }
+
+/* ===== الحقول ===== */
+.inp { width:100%; padding:12px 15px; border:1px solid var(--gold-border); border-radius:9px; background:var(--input); color:var(--text); font-size:15px; outline:none; transition:0.2s; }
+.inp:focus { border-color:var(--gold); box-shadow:0 0 0 3px rgba(201,162,75,0.12); }
+.inp::placeholder { color:var(--faint); }
+select.inp { cursor:pointer; }
+label.lbl { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; font-weight:600; }
+
+/* ===== الهيدر العام ===== */
+.pub-header { position:sticky; top:0; z-index:50; background:rgba(16,26,18,0.85); backdrop-filter:blur(12px); border-bottom:1px solid var(--gold-border); padding:12px 20px; display:flex; align-items:center; justify-content:space-between; }
+.brand { display:flex; align-items:center; gap:12px; }
+.brand img { width:46px; height:46px; }
+.brand .t1 { font-size:11px; color:var(--muted); }
+.brand .t2 { font-size:14px; font-weight:800; color:var(--gold); }
+
+/* ===== صفحة الاستعلام ===== */
+.search-hero { text-align:center; padding:50px 20px 20px; }
+.search-hero img { width:110px; height:110px; filter:drop-shadow(0 0 18px rgba(201,162,75,0.35)); }
+.search-hero h1 { font-size:26px; font-weight:900; color:var(--gold); margin-top:14px; }
+.search-hero p { color:var(--muted); font-size:14px; margin-top:4px; }
+.search-card { max-width:520px; margin:24px auto; background:var(--surface); border:1px solid var(--gold-border); border-radius:14px; padding:24px; }
+.result-card { max-width:520px; margin:20px auto; background:var(--raised); border:1.5px solid var(--gold-border); border-radius:14px; padding:24px; animation:fadeUp .4s ease; }
+.result-row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.05); font-size:14px; }
+.result-row:last-child { border-bottom:none; }
+.result-row .k { color:var(--muted); } .result-row .v { font-weight:700; }
+.notfound { max-width:520px; margin:20px auto; background:rgba(212,90,90,0.08); border:1.5px solid var(--danger); border-radius:12px; padding:20px; text-align:center; color:#e89a9a; animation:fadeUp .4s ease; }
+
+/* ===== صفحة الدخول ===== */
+.login-wrap { min-height:calc(100vh - 71px); display:flex; align-items:center; justify-content:center; padding:20px; }
+.login-card { width:100%; max-width:400px; background:var(--surface); border:1px solid var(--gold-border); border-radius:16px; padding:36px 30px; text-align:center; position:relative; overflow:hidden; }
+.login-card::before { content:''; position:absolute; top:0; right:0; left:0; height:3px; background:linear-gradient(90deg,#C9A24B,#E3C878,#A9823A); }
+.login-card img { width:96px; height:96px; margin-bottom:14px; filter:drop-shadow(0 0 14px rgba(201,162,75,0.4)); }
+.login-card h2 { font-size:20px; font-weight:800; color:var(--gold); }
+.login-card .sub { font-size:12.5px; color:var(--muted); margin:6px 0 22px; }
+.login-err { color:#e89a9a; font-size:13px; margin-top:10px; min-height:18px; }
+
+/* ===== لوحة التحكم ===== */
+.admin-header { position:sticky; top:0; z-index:50; background:rgba(16,26,18,0.9); backdrop-filter:blur(12px); border-bottom:1px solid var(--gold-border); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.admin-nav { display:flex; gap:6px; flex-wrap:wrap; }
+.admin-nav button { padding:8px 14px; border-radius:8px; border:1px solid transparent; background:transparent; color:var(--muted); font-size:13px; font-weight:700; transition:0.2s; }
+.admin-nav button:hover { color:var(--gold); }
+.admin-nav button.active { color:var(--gold); border-color:var(--gold-border); background:rgba(201,162,75,0.08); }
+.admin-main { max-width:1400px; margin:0 auto; padding:20px 16px 60px; }
+.page-title { font-size:22px; font-weight:900; color:var(--gold); margin-bottom:4px; display:flex; align-items:center; gap:10px; }
+.page-sub { font-size:13px; color:var(--muted); margin-bottom:18px; }
+
+/* الإحصائيات العلوية */
+.stats-strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(105px,1fr)); gap:10px; margin-bottom:18px; }
+.stat-box { background:linear-gradient(145deg,#16241A,#0f1a12); border:1px solid var(--gold-border); border-radius:10px; padding:13px 8px; text-align:center; }
+.stat-box .n { font-size:26px; font-weight:900; color:var(--gold); font-variant-numeric:tabular-nums; }
+.stat-box .l { font-size:11px; color:var(--muted); margin-top:3px; }
+.stat-box.alert .n { color:var(--danger); }
+
+/* شريط الأدوات */
+.toolbar { display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap; align-items:center; background:rgba(16,26,18,0.7); border:1px solid var(--gold-border); border-radius:12px; padding:12px; position:sticky; top:66px; z-index:40; backdrop-filter:blur(10px); }
+.toolbar .inp { flex:1; min-width:180px; }
+
+/* الأقسام */
+.sections-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:16px; }
+.section-card { background:linear-gradient(145deg,#16241A,#0f1a12); border:1px solid var(--gold-border); border-radius:12px; overflow:hidden; }
+.section-head { display:flex; align-items:center; justify-content:space-between; padding:13px 16px; border-bottom:1px solid rgba(201,162,75,0.12); }
+.section-head .st { font-size:15px; font-weight:800; display:flex; align-items:center; gap:8px; }
+.section-head .cnt { padding:3px 11px; border-radius:20px; font-size:12.5px; font-weight:800; }
+.section-body { padding:10px; max-height:380px; overflow-y:auto; }
+.section-body::-webkit-scrollbar { width:5px; } .section-body::-webkit-scrollbar-thumb { background:var(--gold-border); border-radius:3px; }
+.empty-note { text-align:center; color:var(--faint); font-size:13px; padding:26px 10px; }
+
+/* بطاقة الفرد */
+.p-card { background:rgba(201,162,75,0.04); border:1px solid rgba(201,162,75,0.12); border-radius:10px; padding:11px 12px; margin-bottom:8px; cursor:pointer; transition:0.18s; position:relative; }
+.p-card:hover { border-color:rgba(201,162,75,0.35); background:rgba(201,162,75,0.07); }
+.p-card.selected { border-color:var(--gold); background:rgba(201,162,75,0.13); box-shadow:0 0 0 1px var(--gold); }
+.p-card.overdue { border-color:var(--danger); animation:pulse 2.2s infinite; }
+@keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(212,90,90,.0)} 50%{box-shadow:0 0 12px 2px rgba(212,90,90,.35)} }
+.p-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
+.p-id { color:var(--gold); font-weight:800; font-size:13px; font-variant-numeric:tabular-nums; direction:ltr; }
+.p-rank { font-size:11px; padding:2px 9px; border-radius:6px; background:rgba(154,166,146,0.15); color:var(--muted); font-weight:700; }
+.p-name { font-weight:700; font-size:14.5px; }
+.p-note { font-size:12px; color:var(--warning); margin-top:4px; }
+.p-meta { font-size:11.5px; color:var(--faint); margin-top:5px; display:flex; justify-content:space-between; align-items:center; }
+.p-badge-overdue { background:rgba(212,90,90,0.2); color:#ef9a9a; font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:10px; }
+.p-actions { display:flex; gap:6px; margin-top:8px; }
+.p-actions button { flex:1; padding:6px; font-size:11.5px; border-radius:7px; border:1px solid var(--gold-border); background:transparent; color:var(--muted); font-weight:700; }
+.p-actions button:hover { color:var(--gold); border-color:var(--gold); }
+.p-actions .del:hover { color:#ef9a9a; border-color:var(--danger); }
+
+/* شريط النقل الجماعي */
+.move-bar { position:fixed; bottom:16px; right:50%; transform:translateX(50%); background:var(--raised); border:1.5px solid var(--gold); border-radius:14px; padding:12px 18px; display:none; align-items:center; gap:10px; z-index:60; box-shadow:0 10px 40px rgba(0,0,0,0.5); flex-wrap:wrap; max-width:94vw; }
+.move-bar.show { display:flex; }
+
+/* المودال */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.65); display:none; align-items:center; justify-content:center; z-index:100; padding:16px; }
+.modal-overlay.show { display:flex; }
+.modal-box { background:var(--raised); border:1.5px solid var(--gold-border); border-radius:16px; padding:26px; width:100%; max-width:480px; max-height:88vh; overflow-y:auto; animation:fadeUp .3s ease; }
+.modal-box h3 { font-size:17px; font-weight:800; color:var(--gold); margin-bottom:16px; }
+.modal-box .row { margin-bottom:12px; }
+.modal-btns { display:flex; gap:10px; margin-top:18px; }
+.modal-btns .btn { flex:1; }
+.qr-wrap { display:flex; justify-content:center; background:#fff; padding:14px; border-radius:12px; margin:14px 0; }
+
+/* Toast */
+#toast { position:fixed; top:16px; right:50%; transform:translateX(50%) translateY(-80px); background:var(--raised); border:1px solid var(--success); border-right:4px solid var(--success); color:var(--text); padding:12px 22px; border-radius:10px; font-size:14px; font-weight:700; z-index:200; transition:transform .3s ease; box-shadow:0 8px 30px rgba(0,0,0,0.5); }
+#toast.show { transform:translateX(50%) translateY(0); }
+#toast.err { border-color:var(--danger); border-right-color:var(--danger); }
+
+/* التمام والتقارير */
+.report-text { background:var(--surface); border:1px solid var(--gold-border); border-radius:12px; padding:20px; white-space:pre-wrap; font-size:14px; line-height:1.9; font-family:'Cairo',monospace; direction:rtl; }
+/* السجل */
+.ev { display:flex; gap:12px; padding:13px 14px; background:var(--surface); border:1px solid rgba(201,162,75,0.12); border-radius:10px; margin-bottom:8px; align-items:flex-start; }
+.ev-ico { width:34px; height:34px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
+.ev .b { flex:1; font-size:13.5px; }
+.ev .t { font-size:11px; color:var(--faint); margin-top:3px; }
+.filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.chip { padding:7px 14px; border-radius:20px; border:1px solid var(--gold-border); background:transparent; color:var(--muted); font-size:12.5px; font-weight:700; }
+.chip.active { background:rgba(201,162,75,0.15); color:var(--gold); border-color:var(--gold); }
+
+/* إحصائيات */
+.bar-row { margin-bottom:12px; }
+.bar-row .bl { display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; }
+.bar-track { height:10px; background:rgba(201,162,75,0.08); border-radius:6px; overflow:hidden; }
+.bar-fill { height:100%; border-radius:6px; background:linear-gradient(90deg,#A9823A,#E3C878); transition:width 1s ease; }
+.gauge { text-align:center; padding:24px; }
+.gauge .big { font-size:52px; font-weight:900; color:var(--gold); }
+.card-box { background:var(--surface); border:1px solid var(--gold-border); border-radius:12px; padding:20px; margin-bottom:16px; }
+.card-box h4 { font-size:15px; font-weight:800; color:var(--gold); margin-bottom:14px; }
+
+/* الطباعة */
+.print-area { display:none; }
+@media print {
+  body { background:#fff!important; }
+  .view, .no-print, #watermark, .move-bar, #toast, .modal-overlay { display:none!important; }
+  .print-area { display:block!important; color:#000; background:#fff; }
+  @page { size:A4; margin:15mm; }
+  .print-area table { width:100%; border-collapse:collapse; }
+  .print-area th, .print-area td { border:1px solid #333; padding:7px 9px; font-size:12.5px; text-align:right; }
+  .print-area thead { display:table-header-group; }
+  .print-area th { background:#f0e8d5; }
+}
+.print-header { text-align:center; margin-bottom:16px; }
+.print-header img { width:80px; }
+.print-header h2 { font-size:17px; margin:6px 0 2px; }
+.print-header .gold-rule { border-top:2px solid #C9A24B; border-bottom:1px solid #C9A24B; height:5px; margin:10px 0; }
+.sign-row { display:flex; justify-content:space-between; margin-top:44px; font-size:13px; font-weight:700; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+@media (max-width:640px){ .stats-strip{grid-template-columns:repeat(4,1fr);} .stat-box .n{font-size:19px;} }
+</style>
+</head>
+<body>
+<div id="watermark"><img id="wmLogo" alt=""></div>
+
+<!-- ============ صفحة الاستعلام العامة ============ -->
+<div class="view active" id="view-search">
+  <div class="pub-header no-print">
+    <div class="brand">
+      <img class="logoImg" alt="الشعار">
+      <div><div class="t1">القيادة العامة للقوات المسلحة الليبية</div><div class="t2">سرية أوباري — نظام إدارة الأفراد</div></div>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="goLogin()">🔒 دخول المسؤول</button>
+  </div>
+  <div class="search-hero no-print">
+    <img class="logoImg" alt="شعار القيادة العامة">
+    <h1>الاستعلام عن الحالة</h1>
+    <p>أدخل الرقم العسكري أو الاسم للتحقق من حالة الفرد</p>
+  </div>
+  <div class="search-card no-print">
+    <div style="display:flex;gap:10px;">
+      <input class="inp" id="pubSearch" placeholder="الرقم العسكري أو الاسم..." onkeypress="if(event.key==='Enter')publicSearch()">
+      <button class="btn btn-gold" onclick="publicSearch()">🔍 بحث</button>
+    </div>
+  </div>
+  <div id="pubResult"></div>
+  <div style="text-align:center;color:var(--faint);font-size:12px;padding:30px;" class="no-print">نظام إدارة الأفراد — سرية أوباري</div>
+</div>
+
+<!-- ============ صفحة الدخول ============ -->
+<div class="view" id="view-login">
+  <div class="pub-header no-print">
+    <div class="brand">
+      <img class="logoImg" alt="الشعار">
+      <div><div class="t1">القيادة العامة للقوات المسلحة الليبية</div><div class="t2">سرية أوباري — نظام إدارة الأفراد</div></div>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="showView('search')">‹ عودة للاستعلام</button>
+  </div>
+  <div class="login-wrap">
+    <div class="login-card">
+      <img class="logoImg" alt="الشعار">
+      <h2>منطقة المسؤول</h2>
+      <p class="sub">وصول مقيّد — للمسؤولين فقط</p>
+      <input class="inp" type="email" id="emailInput" placeholder="البريد الإلكتروني" style="text-align:center;margin-bottom:10px;direction:ltr;" onkeypress="if(event.key==='Enter')doLogin()">
+      <input class="inp" type="password" id="pwInput" placeholder="كلمة المرور" style="text-align:center;" onkeypress="if(event.key==='Enter')doLogin()">
+      <div class="login-err" id="loginErr"></div>
+      <button class="btn btn-gold" style="width:100%;margin-top:10px;" onclick="doLogin()">دخول ←</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ لوحة التحكم ============ -->
+<div class="view" id="view-admin">
+  <div class="admin-header no-print">
+    <div class="brand">
+      <img class="logoImg" style="width:40px;height:40px;" alt="الشعار">
+      <div><div class="t1">سرية أوباري</div><div class="t2" style="font-size:13px;">لوحة التحكم</div></div>
+    </div>
+    <div class="admin-nav">
+      <button data-page="dashboard" class="active" onclick="showAdminPage('dashboard')">🏠 اللوحة</button>
+      <button data-page="report" onclick="showAdminPage('report')">📋 التمام</button>
+      <button data-page="history" onclick="showAdminPage('history')">🕐 السجل</button>
+      <button data-page="stats" onclick="showAdminPage('stats')">📊 الإحصائيات</button>
+      <button data-page="print" onclick="showAdminPage('print')">🖨 الطباعة</button>
+      <button data-page="settings" onclick="showAdminPage('settings')">⚙ الإعدادات</button>
+      <button onclick="doLogout()" style="color:#e89a9a;">⎋ خروج</button>
+    </div>
+  </div>
+  <div class="admin-main">
+
+    <!-- اللوحة الرئيسية -->
+    <div class="admin-page" id="page-dashboard">
+      <div class="page-title">لوحة إدارة الأفراد</div>
+      <div class="page-sub" id="dashDate"></div>
+      <div class="stats-strip" id="statsStrip"></div>
+      <div class="toolbar no-print">
+        <input class="inp" id="adminSearch" placeholder="🔍 بحث بالرقم العسكري أو الاسم أو الرتبة..." oninput="renderDashboard()">
+        <button class="btn btn-gold btn-sm" onclick="openPersonForm()">＋ إضافة فرد</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('xlsFile').click()">📂 استيراد Excel</button>
+        <input type="file" id="xlsFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importExcel(event)">
+        <button class="btn btn-ghost btn-sm" onclick="exportExcel()">💾 تصدير Excel</button>
+      </div>
+      <div class="sections-grid" id="sectionsGrid"></div>
+    </div>
+
+    <!-- التمام اليومي -->
+    <div class="admin-page" id="page-report" style="display:none;">
+      <div class="page-title">📋 التمام اليومي</div>
+      <div class="page-sub" id="reportDate"></div>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;" class="no-print">
+        <button class="btn btn-ghost" onclick="copyReport()">📄 نسخ التقرير (واتساب)</button>
+        <button class="btn btn-gold" onclick="printReport()">🖨 طباعة التقرير الرسمي</button>
+      </div>
+      <div class="report-text no-print" id="reportText"></div>
+    </div>
+
+    <!-- سجل التنقلات -->
+    <div class="admin-page" id="page-history" style="display:none;">
+      <div class="page-title">🕐 سجل التنقلات والأحداث</div>
+      <div class="page-sub">أرشيف كامل لكل العمليات</div>
+      <div class="filters no-print" id="historyFilters"></div>
+      <div style="margin-bottom:14px;" class="no-print"><input class="inp" id="historySearch" placeholder="بحث برقم الفرد أو اسمه..." oninput="renderHistory()"></div>
+      <div id="historyList"></div>
+    </div>
+
+    <!-- الإحصائيات -->
+    <div class="admin-page" id="page-stats" style="display:none;">
+      <div class="page-title">📊 لوحة الإحصائيات</div>
+      <div class="page-sub" id="statsDate"></div>
+      <div id="statsContent"></div>
+    </div>
+
+    <!-- كشوف الطباعة -->
+    <div class="admin-page" id="page-print" style="display:none;">
+      <div class="page-title">🖨 كشوف الطباعة الرسمية</div>
+      <div class="page-sub">اختر القسم ثم اطبع الكشف</div>
+      <div class="card-box no-print">
+        <label class="lbl">القسم</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <select class="inp" id="printSection" style="flex:1;min-width:200px;"></select>
+          <button class="btn btn-gold" onclick="doPrintRoster()">🖨 طباعة الكشف</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- الإعدادات -->
+    <div class="admin-page" id="page-settings" style="display:none;">
+      <div class="page-title">⚙ الإعدادات</div>
+      <div class="page-sub">كلمة المرور والنسخ الاحتياطي</div>
+      <div class="card-box">
+        <h4>🔐 تغيير كلمة مرور المسؤول</h4>
+          <div class="row" style="margin-bottom:10px;"><label class="lbl">كلمة المرور الجديدة</label><input class="inp" type="password" id="newPw"></div>
+        <div class="row" style="margin-bottom:14px;"><label class="lbl">تأكيد الجديدة</label><input class="inp" type="password" id="newPw2"></div>
+        <button class="btn btn-gold" onclick="changePassword()">حفظ كلمة المرور</button>
+      </div>
+      <div class="card-box">
+        <h4>💾 النسخ الاحتياطي</h4>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">حمّل نسخة كاملة من البيانات (أفراد + سجل) أو استعد نسخة سابقة.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn btn-gold" onclick="downloadBackup()">⬇ تنزيل نسخة احتياطية</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('restoreFile').click()">⬆ استعادة نسخة</button>
+          <input type="file" id="restoreFile" accept=".json" style="display:none" onchange="restoreBackup(event)">
+          <button class="btn btn-danger" onclick="resetData()">↺ استعادة بيانات السرية الأصلية</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- شريط النقل الجماعي -->
+<div class="move-bar no-print" id="moveBar">
+  <span style="font-size:13px;font-weight:700;" id="moveCount"></span>
+  <select class="inp" id="moveTo" style="width:auto;padding:8px;"></select>
+  <input class="inp" type="date" id="moveEnd" style="width:auto;padding:8px;" title="تاريخ نهاية الحالة (اختياري)">
+  <button class="btn btn-gold btn-sm" onclick="doMove()">➤ تنفيذ النقل</button>
+  <button class="btn btn-ghost btn-sm" onclick="clearSelection()">✕ إلغاء</button>
+</div>
+
+<!-- المودال -->
+<div class="modal-overlay" id="modal"><div class="modal-box" id="modalBox"></div></div>
+<div id="toast"></div>
+
+<!-- منطقة الطباعة -->
+<div class="print-area" id="printArea"></div>
+
+<script>
+
+/* ===== الشعار مضمّن (base64) ===== */
+const LOGO_B64="data:image/webp;base64,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";
+/* ===== بيانات الأفراد (152) ===== */
+const DEFAULT_PERSONS=[{"militaryId":"37851","rank":"نقيب","name":"رجب علي محمد","notes":"","status":"force"},{"militaryId":"284079","rank":"رع و","name":"علي رجب محمد سالم","notes":"","status":"force"},{"militaryId":"286438","rank":"رع و","name":"سليمان عبدالسلام عبدالجليل","notes":"","status":"force"},{"militaryId":"286443","rank":"رع و","name":"ميلاد جبريل محمد علي","notes":"","status":"force"},{"militaryId":"295817","rank":"رع و","name":"عبدالقادر الصالحين عمر","notes":"","status":"force"},{"militaryId":"486534","rank":"رع و","name":"محمد ابراهيم محمد سعد","notes":"","status":"force"},{"militaryId":"486867","rank":"رع و","name":"مصطفي الصادق محمد","notes":"","status":"force"},{"militaryId":"486993","rank":"رع و","name":"جبريل عبدالسلام محمد علي","notes":"","status":"force"},{"militaryId":"487000","rank":"رع و","name":"حسن عبدالقادر عبدالله","notes":"","status":"force"},{"militaryId":"523421","rank":"رع و","name":"محمد علي السنوسي علي","notes":"","status":"force"},{"militaryId":"523451","rank":"رع و","name":"سالم ابراهيم علي محمد","notes":"","status":"force"},{"militaryId":"541723","rank":"رع س","name":"امحمد عبد المغيث محمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"559002","rank":"رع و","name":"محمد صالح عمر ابوبكر","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"568773","rank":"رع و","name":"بن عيسي ضؤ عبدالرسول ارحومه","notes":"","status":"force"},{"militaryId":"570347","rank":"رع و","name":"طارق ضؤ سالم المحروقي","notes":"","status":"force"},{"militaryId":"578491","rank":"رع و","name":"حمزه منير لاثني مخافه","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"581151","rank":"رع و","name":"السنوسي عبدالسلام محمد عبدالجليل","notes":"","status":"force"},{"militaryId":"583668","rank":"رع و","name":"عاشور سالم خليفه محمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"584032","rank":"رع و","name":"أبوبكر عيسى أبوبوبكر لقريد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"586608","rank":"رع و","name":"اسماعيل عمرا ن محمد حمة","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"587634","rank":"رع و","name":"علي سعد عبدالحفيظ ابراهيم","notes":"","status":"force"},{"militaryId":"587693","rank":"رع و","name":"مصطفي مسعود محمد سالم","notes":"","status":"force"},{"militaryId":"587730","rank":"رع و","name":"طه علي عبدالحفيظ","notes":"","status":"force"},{"militaryId":"590985","rank":"رع و","name":"أحمد أغماري الامين محمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"593447","rank":"رع و","name":"عبدالعزيز محفوظ محمد علي","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"593452","rank":"رع و","name":"سعد الزروق سعد صالح","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"593717","rank":"رع و","name":"بالقاسم عبدالسلام صالح أكشيك","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"600335","rank":"رع و","name":"محمد رمضان محمد بركه","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"600341","rank":"رع و","name":"اسامة امبارك علي الهادي بداوي","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"602222","rank":"رع و","name":"طارق عبدالرزاق سعد","notes":"","status":"force"},{"militaryId":"605289","rank":"رع و","name":"علي عبدالسلام مسعود الحيطوم","notes":"","status":"force"},{"militaryId":"605982","rank":"رع س","name":"عاشور وردكو صالح محمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"609018","rank":"رع س","name":"سليمان سيد موسى لينو","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"609026","rank":"رع س","name":"صالح قتى موسى لينو","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"609060","rank":"رع س","name":"أحمد شهاء محمد لينو","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"618864","rank":"رع و","name":"عمر محمد عبد الرحمن أحمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660822","rank":"عريف","name":"معتوق فتحي عتيق فضيل","notes":"","status":"force"},{"militaryId":"660825","rank":"عريف","name":"فتحي محمد ابراهيم مرسال","notes":"","status":"force"},{"militaryId":"660826","rank":"رع س","name":"محمد صالح وردكو الغالي","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660829","rank":"رع س","name":"ربيع محمد صالح فرحات ميلود","notes":"","status":"force"},{"militaryId":"660832","rank":"جندي","name":"محمود سالم عبدالله","notes":"","status":"force"},{"militaryId":"660840","rank":"رع س","name":"علي لاون حسن آدم","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660843","rank":"رع س","name":"محمد عمر احمد عبدالرسول","notes":"","status":"force"},{"militaryId":"660852","rank":"رع س","name":"احمد عبدالسلام محمد حميد","notes":"","status":"force"},{"militaryId":"660855","rank":"رع س","name":"محمد عبدالله توكه محمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660862","rank":"رع س","name":"عبدالرحمن عبدالله ادريس سوده","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660863","rank":"رع س","name":"كوصو محمد علي داري","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660866","rank":"رع س","name":"أبوبكر الزروق محمد قدينو","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660872","rank":"رع س","name":"علي الفيتوري حامد محمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660878","rank":"رع س","name":"محمود العزي ماركس عبدالله","notes":"","status":"force"},{"militaryId":"660884","rank":"جندي","name":"ابوبكر محمد المدني رجب","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660893","rank":"رع س","name":"ابراهيم المهدي ودي","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660915","rank":"رع س","name":"عبدالسلام امبارك علي بداوي","notes":"","status":"force"},{"militaryId":"660920","rank":"رع س","name":"عبدالهادي عمر محمد الشيباني","notes":"","status":"force"},{"militaryId":"660921","rank":"رع س","name":"سهل عبدالسلام عمر صالح","notes":"","status":"force"},{"militaryId":"660934","rank":"رع س","name":"ابوبكر عبدالسلام محمد كشتاوي","notes":"","status":"force"},{"militaryId":"660952","rank":"رع س","name":"رمضان محمد امغيربي كروري","notes":"","status":"force"},{"militaryId":"660955","rank":"رع س","name":"يوسف حامد حكيم احمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660959","rank":"جندي","name":"جمعه إجي سيدى","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660968","rank":"عريف","name":"فتحي علي صالح سالم ابوسته","notes":"","status":"force"},{"militaryId":"660977","rank":"رع س","name":"سامي أنس سعيد أبوسهمين","notes":"","status":"force"},{"militaryId":"660988","rank":"رع س","name":"الزين ادم ابوبكر عبدالله","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660990","rank":"رع س","name":"صلاح عبدالسلام مسعود","notes":"","status":"force"},{"militaryId":"660994","rank":"رع س","name":"أحمد جدي سليمان يوسف","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"660999","rank":"رع س","name":"العابد علي السيدين يوسف","notes":"","status":"force"},{"militaryId":"661020","rank":"رع س","name":"العيد محمد علي رمضان","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661021","rank":"رع س","name":"مختار محمد مختار شافاو","notes":"","status":"force"},{"militaryId":"661026","rank":"رع و","name":"محمد عمران محمد محمد","notes":"","status":"force"},{"militaryId":"661031","rank":"رع س","name":"مدي وانتيتي عبدالنبي محمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661042","rank":"رع س","name":"ابراهيم العابد المهدي يوسف","notes":"","status":"force"},{"militaryId":"661059","rank":"رع س","name":"موسى محمد شهاء وردكو","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661085","rank":"رع س","name":"عبدالسلام عيسى عبدالسلام","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661089","rank":"جندي","name":"محمد علي محمد قرصدي","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661098","rank":"رع س","name":"علي محمد ابرهيم التيوره","notes":"","status":"force"},{"militaryId":"661099","rank":"رع س","name":"ميلاد جمعه سعدالله عبدالله","notes":"","status":"force"},{"militaryId":"661101","rank":"عريف","name":"ابراهيم علي صالح ابوسته","notes":"","status":"force"},{"militaryId":"661129","rank":"رع س","name":"ميلود عبدالله دحول كرباس","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661142","rank":"رع س","name":"أحمد سيدي محمد ميهوبه","notes":"","status":"force"},{"militaryId":"661143","rank":"رع س","name":"محمد الزروق محمد قدينو","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661165","rank":"رع س","name":"الصالحين سعيد الهاشمي حبيب","notes":"","status":"force"},{"militaryId":"661167","rank":"رع س","name":"عبدالسلام حبيب عبدالقادر شعبان","notes":"","status":"force"},{"militaryId":"661174","rank":"رع س","name":"فيصل السنوسي عمران يحيى","notes":"","status":"force"},{"militaryId":"661176","rank":"رع س","name":"سليمان عبدالله خمني الصادق","notes":"","status":"force"},{"militaryId":"661197","rank":"رع س","name":"أحمد اللاكي بازنقه موسى","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661200","rank":"رع س","name":"سليم سالم السنوسي عيسى","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661202","rank":"رع س","name":"محمد بركه محمد جري","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661203","rank":"جندي","name":"حسين محمد آدم","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661207","rank":"رع س","name":"السعيدي محمد العربي سعيد","notes":"","status":"force"},{"militaryId":"661208","rank":"رع س","name":"جدى ادم عبدالله مسعود","notes":"","status":"force"},{"militaryId":"661210","rank":"رع س","name":"عثمان يوسف أحمد المجبري","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661227","rank":"رع س","name":"أحمد صالح بشير","notes":"","status":"force"},{"militaryId":"661231","rank":"رع س","name":"احمد عبدالقادر احمد جبريل","notes":"","status":"force"},{"militaryId":"661240","rank":"رع س","name":"عماد خالد السنوسي العابد","notes":"","status":"force"},{"militaryId":"661242","rank":"رع س","name":"السعيدي علي محمد علي الهيدوك","notes":"","status":"force"},{"militaryId":"661245","rank":"جندي","name":"علي السوقي حسن","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661249","rank":"جندي","name":"علي محمد وردكو ابراهيم","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661250","rank":"جندي","name":"بشير ابراهيم محمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661254","rank":"رع س","name":"ابراهيم صالح شهاء","notes":"","status":"force"},{"militaryId":"661255","rank":"رع س","name":"حسن عبدالسلام حسن دركوى","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661257","rank":"رع س","name":"ابوبكر قلمه محمد قدينو","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661258","rank":"رع س","name":"أحمد مرسال عيسى قني","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661278","rank":"رع س","name":"علي اللاكى قلمه محمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"661279","rank":"رع س","name":"رجب بركه سوقي","notes":"","status":"force"},{"militaryId":"671224","rank":"عريف","name":"جمعه محمد المدني","notes":"","status":"force"},{"militaryId":"671254","rank":"رع س","name":"جلال محمد علي عبدالسلام","notes":"","status":"force"},{"militaryId":"671255","rank":"عريف","name":"عبدالسلام محمد محمد صالح","notes":"","status":"force"},{"militaryId":"671258","rank":"عريف","name":"محمد علي سعيد رجب","notes":"","status":"force"},{"militaryId":"671262","rank":"عريف","name":"فوزي عبدالسلام المدني","notes":"","status":"force"},{"militaryId":"671263","rank":"عريف","name":"احمد محمد احمد دودو","notes":"","status":"force"},{"militaryId":"671273","rank":"عريف","name":"أحمد جبريل أحمد محمد","notes":"","status":"force"},{"militaryId":"671287","rank":"عريف","name":"ابراهيم عبدالسلام ابوبكر عباس","notes":"","status":"force"},{"militaryId":"677545","rank":"جندي","name":"حسن محمد عمر ابوبكر","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"677546","rank":"رع س","name":"صالح محمد علي شعبان","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"684668","rank":"عريف","name":"علي ابراهيم الخير عيسى","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"686956","rank":"ن ع","name":"عيسى جابر انالاغني منتوفي","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"689985","rank":"ن ع","name":"صالح إبراهيم عيسي","notes":"","status":"force"},{"militaryId":"780999","rank":"ج أول","name":"محمد عبدالسلام ابوبكر ابوبكر","notes":"","status":"force"},{"militaryId":"781042","rank":"ج أول","name":"خالد الجيلاني اسماعيل عبداللطيف","notes":"","status":"force"},{"militaryId":"781285","rank":"ج أول","name":"أشرف عبدالقادر حامد حمدان","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"781315","rank":"ج أول","name":"خالد محمد علي اسماعيل","notes":"","status":"force"},{"militaryId":"781366","rank":"ج أول","name":"علي الباهي سعيد سالم","notes":"","status":"force"},{"militaryId":"781424","rank":"جندي","name":"مرعي الطيب علي اعظيم","notes":"","status":"force"},{"militaryId":"782727","rank":"ج أول","name":"محمود عبدالمالك الونسي","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"782815","rank":"ج أول","name":"أحمد مولود حملا الأنصاري","notes":"","status":"force"},{"militaryId":"782818","rank":"جندي","name":"علي عثمان حتاي الانصاري","notes":"","status":"force"},{"militaryId":"782835","rank":"ج أول","name":"أحمد سالم عثمان","notes":"","status":"force"},{"militaryId":"782864","rank":"جندي","name":"عقبه سعد الزبير سيدي","notes":"","status":"force"},{"militaryId":"789829","rank":"ج أول","name":"فيصل حبيب الله عبدالرحمن أحمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"789830","rank":"ج أول","name":"عبداللطيف حبيب الله عبدالرحمن أحمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"790065","rank":"ن ع","name":"الشافعي صالح أحمد محمد","notes":"","status":"force"},{"militaryId":"790112","rank":"ن ع","name":"احمد احمد محمد الانصاري","notes":"","status":"force"},{"militaryId":"797008","rank":"جندي","name":"عبدالعزيز المهدي إبراهيم يونس","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"797051","rank":"جندي","name":"ابراهيم امغار كنويش","notes":"","status":"force"},{"militaryId":"797272","rank":"ن ع","name":"ابراهيم ابوبكر محمد اتلي","notes":"","status":"force"},{"militaryId":"799860","rank":"ج أول","name":"أحموده حمدان تكاله العابد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"799867","rank":"ج أول","name":"ادريس المهدي عبدالله قاني","notes":"","status":"force"},{"militaryId":"801663","rank":"جندي","name":"ابراهيم محمد مصطفي عبدالرحمان","notes":"","status":"force"},{"militaryId":"801720","rank":"جندي","name":"عيسى موسى ورزمت مصطفى","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"801740","rank":"جندي","name":"أبوعبيدته عبدالله محمد بلته","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"801750","rank":"جندي","name":"منير أحمد الطاهر الزروق","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"801868","rank":"ج أول","name":"علي ادريس حامد محمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"803370","rank":"ج أول","name":"الزاهي ميلاد محمد","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"803479","rank":"رع س","name":"إسماعيل أيوب محمد نحوي","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"803696","rank":"جندي","name":"علي عمر ناجم احمد","notes":"","status":"force"},{"militaryId":"804237","rank":"ج أول","name":"ابراهيم عثمان حتاي","notes":"","status":"force"},{"militaryId":"809035","rank":"جندي","name":"عبدالرحمن مصطفى سليمان شعيب","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"809044","rank":"جندي","name":"محمد عبدالمجيد شعيب","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"809072","rank":"جندي","name":"محمد أمولن خيرالله أبوحفص","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"809078","rank":"جندي","name":"محمد سيدي محمد علي","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"809079","rank":"جندي","name":"أناره أيوب قاني مانسى","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"810272","rank":"جندي","name":"مختار الياس الطيب محمد الزروق","notes":"لايتقاضى مرتب","status":"force"},{"militaryId":"811625","rank":"جندي","name":"علي ويسون احمد محمد","notes":"لايتقاضى مرتب","status":"force"}]
+;
+
+/* ================= الثوابت ================= */
+const SECTIONS = {
+  force:    {label:'قوة عمومية', color:'#8FA382', icon:'🛡'},
+  mission:  {label:'مأمورية',   color:'#7FA8C9', icon:'📋'},
+  guard:    {label:'غفارة',     color:'#4FA3A5', icon:'👁'},
+  rest:     {label:'راحة عمل',  color:'#5FA35F', icon:'🏠'},
+  medical:  {label:'راحة طبية', color:'#9B7BC8', icon:'🏥'},
+  absent:   {label:'غياب',      color:'#C9973B', icon:'⚠'},
+  deserted: {label:'هروب',      color:'#C05A4A', icon:'⛔'}
+};
+const RANKS = ['جندي','ج أول','عريف','ن ع','رع و','رع س','نقيب','رائد','مقدم','عقيد','عميد','لواء'];
+const LS = { persons:'ubari_persons_v3', events:'ubari_events_v3' };
+/* ================= الاتصال بقاعدة البيانات السحابية ================= */
+const SUPA_URL='https://nzzjmyuktbicsbsynawj.supabase.co';
+const SUPA_KEY='sb_publishable_Lul-f874gP8d0Ca6acxDzg_PYKijsVY';
+const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+let ONLINE = false;
+const dbToApp = r => ({ id:String(r.id), militaryId:String(r.military_id||''), rank:r.rank||'', name:r.name||'', notes:r.notes||'', status:r.status||'force', statusStart:r.status_start||null, statusEnd:r.status_end||null });
+const appToDb = p => ({ id:String(p.id), military_id:String(p.militaryId), rank:p.rank||'', name:p.name||'', notes:p.notes||'', status:p.status||'force', status_start:p.statusStart||null, status_end:p.statusEnd||null });
+async function cloudLoad(){
+  try{
+    const { data, error } = await sb.from('persons').select('*');
+    if(error) throw error;
+    ONLINE = true; persons = (data||[]).map(dbToApp); save(LS.persons, persons); return true;
+  }catch(e){ ONLINE = false; return false; }
+}
+function cloudUpsert(list){
+  if(!ONLINE || !list || !list.length) return;
+  sb.from('persons').upsert(list.map(appToDb)).then(({error})=>{ if(error) toast('تعذر الحفظ في السحابة: '+error.message, false); });
+}
+function cloudDelete(ids){
+  if(!ONLINE) return;
+  sb.from('persons').delete().in('id', ids.map(String)).then(({error})=>{ if(error) toast('تعذر الحذف من السحابة: '+error.message, false); });
+}
+async function cloudReplaceAll(){
+  await sb.from('persons').delete().not('id','is',null);
+  const rows = persons.map(appToDb);
+  for(let i=0;i<rows.length;i+=100){
+    const { error } = await sb.from('persons').insert(rows.slice(i,i+100));
+    if(error){ toast('خطأ سحابي: '+error.message, false); return; }
+  }
+}
+async function cloudLoadEvents(){
+  if(!ONLINE) return;
+  const { data, error } = await sb.from('events').select('*').order('ts',{ascending:false}).limit(500);
+  if(!error && data){ events = data.map(r=>({ts:r.ts,type:r.type,text:r.text})); save(LS.events, events); }
+}
+async function seedIfEmpty(){
+  if(!ONLINE || persons.length) return;
+  persons = DEFAULT_PERSONS.map(x => ({ id:String(x.militaryId), militaryId:String(x.militaryId), rank:x.rank||'', name:x.name||'', notes:x.notes||'', status:'force', statusStart:null, statusEnd:null }));
+  save(LS.persons, persons);
+  await cloudReplaceAll();
+  addEvent('import','تهيئة قاعدة البيانات السحابية: 152 فرداً');
+  toast('تم تحميل قوة السرية (152 فرداً) إلى السحابة');
+}
+
+/* ================= الحالة والتخزين ================= */
+function load(k){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; }catch(e){ return null; } }
+function save(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
+function loadPersons(){
+  let p = load(LS.persons);
+  if(!p || !Array.isArray(p) || !p.length){
+    p = DEFAULT_PERSONS.map(x => ({ id:String(x.militaryId), militaryId:String(x.militaryId), rank:x.rank||'', name:x.name||'', notes:x.notes||'', status:'force', statusStart:null, statusEnd:null }));
+    save(LS.persons, p);
+  }
+  return p;
+}
+let persons = loadPersons();
+let events  = load(LS.events) || [];
+let selected = new Set();
+let histFilter = 'all';
+const $ = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const todayStr = () => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+const fmtDate = iso => { if(!iso) return '—'; const d=new Date(iso); return isNaN(d) ? '—' : d.toLocaleDateString('ar-LY',{year:'numeric',month:'long',day:'numeric'}); };
+const fmtDateShort = iso => { if(!iso) return '—'; const d=new Date(iso); if(isNaN(d)) return '—'; return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear(); };
+const fmtTime = iso => { const d=new Date(iso); return d.toLocaleDateString('ar-LY',{day:'numeric',month:'short'})+' — '+d.toLocaleTimeString('ar-LY',{hour:'2-digit',minute:'2-digit'}); };
+function daysSince(iso){ if(!iso) return 0; const d=new Date(iso); if(isNaN(d)) return 0; return Math.max(0, Math.floor((Date.now()-d.getTime())/86400000)); }
+function arDays(n){ if(n===0) return 'اليوم'; if(n===1) return 'يوم واحد'; if(n===2) return 'يومان'; if(n<=10) return n+' أيام'; return n+' يوماً'; }
+function isOverdue(p){ return p.status!=='force' && p.statusEnd && daysSince(p.statusEnd) > 0 && new Date(p.statusEnd) < new Date(todayStr()); }
+function overdueDays(p){ return isOverdue(p) ? Math.floor((new Date(todayStr()) - new Date(p.statusEnd))/86400000) : 0; }
+function secMeta(k){ return SECTIONS[k] || SECTIONS.force; }
+function savePersons(){ save(LS.persons, persons); }
+function addEvent(type, text){ events.unshift({ ts:new Date().toISOString(), type, text }); if(events.length>2000) events=events.slice(0,2000); save(LS.events, events); if(ONLINE) sb.from('events').insert({type, text}).then(()=>{}); }
+let toastTimer=null;
+function toast(msg, ok=true){
+  const t=$('toast'); t.textContent=msg;
+  t.style.borderColor = ok?'var(--success)':'var(--danger)'; t.style.borderRightColor = ok?'var(--success)':'var(--danger)';
+  t.style.transform='translateX(50%) translateY(0)';
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>{ t.style.transform='translateX(50%) translateY(-80px)'; }, 3200);
+}
+
+/* ================= التنقل بين الواجهات ================= */
+function showView(v){
+  document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active', el.id==='view-'+v));
+  if(v==='admin'){ showAdminPage('dashboard'); }
+  window.scrollTo(0,0);
+}
+function goLogin(){ if(sessionStorage.getItem('ubari_auth')==='1'){ showView('admin'); } else { showView('login'); setTimeout(()=>$('pwInput').focus(),100); } }
+async function doLogin(){
+  const email = $('emailInput').value.trim(), pw = $('pwInput').value;
+  const err = $('loginErr');
+  if(!email || !pw){ err.textContent='أدخل البريد الإلكتروني وكلمة المرور'; err.style.display='block'; return; }
+  err.style.display='none';
+  const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+  if(error){ err.textContent='بيانات الدخول غير صحيحة أو لا يوجد اتصال'; err.style.display='block'; $('pwInput').select(); return; }
+  $('pwInput').value='';
+  await cloudLoad(); await seedIfEmpty();
+  showView('admin'); toast('مرحباً بك في لوحة التحكم');
+}
+async function doLogout(){ await sb.auth.signOut(); showView('search'); toast('تم تسجيل الخروج'); }
+function showAdminPage(p){
+  document.querySelectorAll('.admin-page').forEach(el=>el.style.display='none');
+  $('page-'+p).style.display='block';
+  document.querySelectorAll('.admin-nav button[data-page]').forEach(b=>b.classList.toggle('active', b.dataset.page===p));
+  if(p==='dashboard') renderDashboard();
+  if(p==='report')    renderReport();
+  if(p==='history'){ renderHistory(); cloudLoadEvents().then(renderHistory); }
+  if(p==='stats')     renderStats();
+  if(p==='print')     fillPrintSections();
+}
+
+/* ================= البحث العام ================= */
+function statusOf(p){
+  const s = secMeta(p.status);
+  let extra = '';
+  if(p.status!=='force' && p.statusStart) extra = ' — منذ '+arDays(daysSince(p.statusStart));
+  if(isOverdue(p)) extra += ' — متجاوز '+arDays(overdueDays(p));
+  return s.label + extra;
+}
+function publicSearch(){
+  const q = $('pubSearch').value.trim();
+  const box = $('pubResult');
+  if(!q){ box.innerHTML=''; return; }
+  const res = persons.filter(p => p.militaryId===q || (q.length>=2 && p.name.includes(q)));
+  if(!res.length){
+    box.innerHTML = '<div class="notfound">⚠ لا توجد نتائج مطابقة لـ «'+esc(q)+'»<br><small style="color:var(--faint)">تأكد من الرقم العسكري أو الاسم</small></div>';
+    return;
+  }
+  box.innerHTML = res.map(p=>{
+    const s = secMeta(p.status);
+    return '<div class="result-card" style="border-color:'+s.color+'55">'
+      + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
+      +   '<span style="width:12px;height:12px;border-radius:50%;background:'+s.color+';box-shadow:0 0 10px '+s.color+'"></span>'
+      +   '<b style="font-size:16px;color:'+s.color+'">'+s.icon+' '+s.label+'</b>'
+      +   (isOverdue(p)?'<span class="p-badge-overdue">متجاوز '+arDays(overdueDays(p))+'</span>':'')
+      + '</div>'
+      + '<div class="result-row"><span class="k">الرقم العسكري</span><span class="v" style="direction:ltr">'+esc(p.militaryId)+'</span></div>'
+      + '<div class="result-row"><span class="k">الرتبة</span><span class="v">'+esc(p.rank||'—')+'</span></div>'
+      + '<div class="result-row"><span class="k">الاسم</span><span class="v">'+esc(p.name)+'</span></div>'
+      + '<div class="result-row"><span class="k">الحالة</span><span class="v">'+esc(statusOf(p))+'</span></div>'
+      + (p.statusStart ? '<div class="result-row"><span class="k">تاريخ بداية الحالة</span><span class="v">'+fmtDate(p.statusStart)+'</span></div>' : '')
+      + (p.statusEnd   ? '<div class="result-row"><span class="k">تاريخ نهاية الحالة</span><span class="v">'+fmtDate(p.statusEnd)+'</span></div>' : '')
+      + (p.notes       ? '<div class="result-row"><span class="k">ملاحظات</span><span class="v" style="color:var(--warning)">'+esc(p.notes)+'</span></div>' : '')
+      + '</div>';
+  }).join('');
+}
+
+/* ================= لوحة التحكم ================= */
+function countStatus(k){ return persons.filter(p=>p.status===k).length; }
+function renderDashboard(){
+  $('dashDate').textContent = new Date().toLocaleDateString('ar-LY',{weekday:'long',year:'numeric',month:'long',day:'numeric'}) + (ONLINE ? ' · ☁ متصل بالسحابة' : ' · ⚠ لا يوجد اتصال — بيانات محلية');
+  const overdue = persons.filter(isOverdue).length;
+  const noSalary = persons.filter(p=>(p.notes||'').includes('لايتقاضى')).length;
+  const strip = [
+    {n:persons.length, l:'إجمالي القوة'},
+    {n:countStatus('force'), l:'قوة عمومية'},
+    {n:countStatus('mission'), l:'مأمورية'},
+    {n:countStatus('guard'), l:'غفارة'},
+    {n:countStatus('rest')+countStatus('medical'), l:'راحة'},
+    {n:countStatus('absent')+countStatus('deserted'), l:'غياب/هروب'},
+    {n:noSalary, l:'لا يتقاضى مرتب'},
+    {n:overdue, l:'متجاوزون', alert:overdue>0}
+  ];
+  $('statsStrip').innerHTML = strip.map(s=>'<div class="stat-box'+(s.alert?' alert':'')+'"><div class="n">'+s.n+'</div><div class="l">'+s.l+'</div></div>').join('');
+
+  const q = ($('adminSearch').value||'').trim();
+  const match = p => !q || p.militaryId.includes(q) || p.name.includes(q) || (p.rank||'').includes(q);
+  $('sectionsGrid').innerHTML = Object.keys(SECTIONS).map(k=>{
+    const s = SECTIONS[k];
+    const list = persons.filter(p=>p.status===k && match(p));
+    if(q && !list.length) return '';
+    return '<div class="section-card" style="border-top:3px solid '+s.color+'">'
+      + '<div class="section-head"><span class="st" style="color:'+s.color+'">'+s.icon+' '+s.label+'</span>'
+      + '<span class="cnt" style="background:'+s.color+'22;color:'+s.color+'">'+list.length+'</span></div>'
+      + '<div class="section-body">'
+      + (list.length ? list.map(p=>personCard(p)).join('') : '<div class="empty-note">لا يوجد أفراد</div>')
+      + '</div></div>';
+  }).join('');
+  updateMoveBar();
+}
+function personCard(p){
+  const od = isOverdue(p);
+  const days = p.status!=='force' && p.statusStart ? arDays(daysSince(p.statusStart)) : '';
+  return '<div class="p-card'+(selected.has(p.id)?' selected':'')+(od?' overdue':'')+'" onclick="toggleSelect(\''+esc(p.id)+'\',event)">'
+    + '<div class="p-top"><span class="p-id">'+esc(p.militaryId)+'</span><span class="p-rank">'+esc(p.rank||'—')+'</span></div>'
+    + '<div class="p-name">'+esc(p.name)+'</div>'
+    + (p.notes?'<div class="p-note">⚠ '+esc(p.notes)+'</div>':'')
+    + '<div class="p-meta"><span>'+(p.status!=='force'&&p.statusStart?'منذ '+days:'')+(p.statusEnd?' · حتى '+fmtDateShort(p.statusEnd):'')+'</span>'
+    + (od?'<span class="p-badge-overdue">متجاوز '+arDays(overdueDays(p))+'</span>':'')+'</div>'
+    + '<div class="p-actions no-print">'
+    + '<button onclick="event.stopPropagation();openPersonForm(\''+esc(p.id)+'\')">✏ تعديل</button>'
+    + '<button onclick="event.stopPropagation();showQR(\''+esc(p.id)+'\')">◈ QR</button>'
+    + '<button class="del" onclick="event.stopPropagation();deletePerson(\''+esc(p.id)+'\')">🗑 حذف</button>'
+    + '</div></div>';
+}
+
+/* ===== التحديد والنقل الجماعي ===== */
+function toggleSelect(id, ev){
+  if(ev) ev.stopPropagation();
+  selected.has(id) ? selected.delete(id) : selected.add(id);
+  renderDashboard();
+}
+function updateMoveBar(){
+  const bar = $('moveBar');
+  if(selected.size>0){ bar.classList.add('show'); $('moveCount').textContent = selected.size; }
+  else bar.classList.remove('show');
+}
+function clearSelection(){ selected.clear(); renderDashboard(); }
+function doMove(){
+  const to = $('moveTo').value;
+  const end = $('moveEnd').value || null;
+  if(!to){ toast('اختر القسم الوجهة', false); return; }
+  const s = secMeta(to);
+  const today = todayStr();
+  let n=0;
+  persons.forEach(p=>{
+    if(selected.has(p.id)){
+      p.status=to; p.statusStart=today; p.statusEnd=(to==='force'?null:end);
+      addEvent('move', p.rank+' '+p.name+' ('+p.militaryId+') → '+s.label+(end?' حتى '+fmtDateShort(end):''));
+      n++;
+    }
+  });
+  const moved = persons.filter(p=>selected.has(p.id));
+  selected.clear(); savePersons(); renderDashboard(); cloudUpsert(moved);
+  $('moveEnd').value='';
+  toast('تم نقل '+n+' فرد إلى «'+s.label+'»');
+}
+
+/* ===== إضافة / تعديل / حذف ===== */
+function openPersonForm(id){
+  const p = id ? persons.find(x=>x.id===id) : null;
+  const opts = sel => RANKS.map(r=>'<option '+(sel===r?'selected':'')+'>'+r+'</option>').join('');
+  const secOpts = sel => Object.keys(SECTIONS).map(k=>'<option value="'+k+'" '+(sel===k?'selected':'')+'>'+SECTIONS[k].label+'</option>').join('');
+  $('modalBox').innerHTML =
+      '<h3 style="color:var(--gold);margin-bottom:16px;">'+(p?'✏ تعديل بيانات فرد':'➕ إضافة فرد جديد')+'</h3>'
+    + '<label class="lbl">الرقم العسكري</label><input class="inp" id="fId" style="direction:ltr" value="'+esc(p?p.militaryId:'')+'" '+(p?'disabled':'')+'>'
+    + '<label class="lbl">الرتبة</label><select class="inp" id="fRank">'+opts(p?p.rank:'جندي')+'</select>'
+    + '<label class="lbl">الاسم</label><input class="inp" id="fName" value="'+esc(p?p.name:'')+'">'
+    + '<label class="lbl">القسم / الحالة</label><select class="inp" id="fStatus">'+secOpts(p?p.status:'force')+'</select>'
+    + '<div style="display:flex;gap:10px;"><div style="flex:1"><label class="lbl">بداية الحالة</label><input class="inp" type="date" id="fStart" value="'+(p&&p.statusStart?p.statusStart:'')+'"></div>'
+    + '<div style="flex:1"><label class="lbl">نهاية الحالة</label><input class="inp" type="date" id="fEnd" value="'+(p&&p.statusEnd?p.statusEnd:'')+'"></div></div>'
+    + '<label class="lbl">ملاحظات</label><input class="inp" id="fNotes" value="'+esc(p?p.notes:'')+'" placeholder="مثال: لايتقاضى مرتب">'
+    + '<div class="modal-btns"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>'
+    + '<button class="btn btn-gold" onclick="savePersonForm(\''+(p?p.id:'')+'\')">💾 حفظ</button></div>';
+  $('modal').classList.add('show');
+  setTimeout(()=>$(p?'fName':'fId').focus(),100);
+}
+function savePersonForm(id){
+  const mid = $('fId').value.trim(), name = $('fName').value.trim();
+  if(!mid || !name){ toast('الرقم العسكري والاسم إجباريان', false); return; }
+  const data = { militaryId:mid, rank:$('fRank').value, name, status:$('fStatus').value,
+    statusStart:$('fStart').value||null, statusEnd:$('fEnd').value||null, notes:$('fNotes').value.trim() };
+  if(data.status==='force'){ data.statusStart=null; data.statusEnd=null; }
+  else if(!data.statusStart){ data.statusStart=todayStr(); }
+  if(id){
+    const p = persons.find(x=>x.id===id); Object.assign(p, data);
+    addEvent('edit', 'تعديل بيانات: '+data.rank+' '+data.name+' ('+mid+')');
+    toast('تم حفظ التعديلات');
+  } else {
+    if(persons.some(x=>x.militaryId===mid)){ toast('الرقم العسكري موجود مسبقاً', false); return; }
+    persons.push(Object.assign({id:mid}, data));
+    addEvent('add', 'إضافة فرد: '+data.rank+' '+data.name+' ('+mid+')');
+    toast('تمت إضافة الفرد');
+  }
+  savePersons(); closeModal(); renderDashboard();
+  cloudUpsert([id ? persons.find(x=>x.id===id) : persons[persons.length-1]]);
+}
+function deletePerson(id){
+  const p = persons.find(x=>x.id===id); if(!p) return;
+  $('modalBox').innerHTML = '<h3 style="color:var(--danger);margin-bottom:12px;">🗑 حذف فرد</h3>'
+    + '<p style="margin-bottom:18px;line-height:1.8;">هل أنت متأكد من حذف<br><b>'+esc(p.rank)+' '+esc(p.name)+' ('+esc(p.militaryId)+')</b>؟</p>'
+    + '<div class="modal-btns"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>'
+    + '<button class="btn btn-danger-solid" onclick="confirmDelete(\''+esc(id)+'\')">نعم، حذف</button></div>';
+  $('modal').classList.add('show');
+}
+function confirmDelete(id){
+  const p = persons.find(x=>x.id===id);
+  persons = persons.filter(x=>x.id!==id); selected.delete(id);
+  addEvent('delete', 'حذف فرد: '+p.rank+' '+p.name+' ('+p.militaryId+')');
+  savePersons(); closeModal(); renderDashboard(); cloudDelete([id]); toast('تم حذف الفرد');
+}
+function closeModal(){ $('modal').classList.remove('show'); }
+
+/* ===== رمز QR ===== */
+function showQR(id){
+  const p = persons.find(x=>x.id===id); if(!p) return;
+  const url = location.href.split('?')[0].split('#')[0] + '?id=' + encodeURIComponent(p.militaryId);
+  $('modalBox').innerHTML = '<h3 style="color:var(--gold);margin-bottom:6px;">◈ رمز الاستعلام</h3>'
+    + '<p style="color:var(--muted);font-size:13px;">'+esc(p.rank)+' '+esc(p.name)+' — <span style="direction:ltr;display:inline-block">'+esc(p.militaryId)+'</span></p>'
+    + '<div class="qr-wrap"><div id="qrBox"></div></div>'
+    + '<p style="font-size:11.5px;color:var(--faint);word-break:break-all;direction:ltr;text-align:left;">'+esc(url)+'</p>'
+    + '<div class="modal-btns"><button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>'
+    + '<button class="btn btn-gold" onclick="printQR(\''+esc(p.militaryId)+'\',\''+esc(p.rank)+' '+esc(p.name)+'\')">🖨 طباعة</button></div>';
+  $('modal').classList.add('show');
+  new QRCode($('qrBox'), { text:url, width:180, height:180, colorDark:'#0B120D', colorLight:'#ffffff' });
+}
+function printQR(mid, label){
+  $('printArea').innerHTML = '<div class="print-header"><img src="'+LOGO_B64+'" alt=""><h2>القيادة العامة للقوات المسلحة الليبية</h2><h2>سرية أوباري — بطاقة استعلام</h2><div class="gold-rule"></div></div>'
+    + '<div style="text-align:center;padding:30px 0;"><div id="qrPrint" style="display:inline-block;background:#fff;padding:16px;border-radius:8px;"></div>'
+    + '<p style="margin-top:16px;font-size:15px;font-weight:700;">'+esc(label)+'</p>'
+    + '<p style="font-size:13px;color:#333;direction:ltr;">'+esc(mid)+'</p></div>';
+  new QRCode($('qrPrint'), { text:location.href.split('?')[0].split('#')[0]+'?id='+encodeURIComponent(mid), width:200, height:200 });
+  setTimeout(()=>window.print(), 300);
+}
+
+/* ================= استيراد / تصدير Excel ================= */
+function importExcel(ev){
+  const f = ev.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = e => {
+    try{
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+      let added=0, updated=0;
+      rows.forEach(r=>{
+        const cells = r.map(c=>String(c).trim());
+        if(cells.length<2) return;
+        // تحديد الأعمدة بالمحتوى: رقم عسكري = خلية رقمية من 4+ خانات
+        let mid='', rank='', name='', notes='';
+        cells.forEach(c=>{ if(/^\d{4,}$/.test(c) && !mid) mid=c; });
+        if(!mid) return;
+        const others = cells.filter(c=>c && c!==mid);
+        rank  = others.find(c=>RANKS.includes(c)) || '';
+        name  = others.filter(c=>c!==rank && !/^\d+$/.test(c)).sort((a,b)=>b.length-a.length)[0] || '';
+        notes = others.find(c=>c.includes('لايتقاضى')||c.includes('ملاحظ')) || '';
+        if(!name || name.length<3) return;
+        const ex = persons.find(p=>p.militaryId===mid);
+        if(ex){ ex.rank=rank||ex.rank; ex.name=name; if(notes) ex.notes=notes; updated++; }
+        else { persons.push({id:mid, militaryId:mid, rank, name, notes, status:'force', statusStart:null, statusEnd:null}); added++; }
+      });
+      savePersons(); cloudUpsert(persons);
+      addEvent('import', 'استيراد Excel: '+added+' إضافة، '+updated+' تحديث');
+      renderDashboard();
+      toast('تم الاستيراد: '+added+' إضافة · '+updated+' تحديث');
+    }catch(err){ toast('تعذر قراءة الملف — تأكد من الصيغة', false); }
+    ev.target.value='';
+  };
+  rd.readAsArrayBuffer(f);
+}
+function exportExcel(){
+  const data = [['الرقم العسكري','الرتبة','الاسم','القسم/الحالة','بداية الحالة','نهاية الحالة','ملاحظات']];
+  persons.forEach(p=>data.push([p.militaryId, p.rank, p.name, secMeta(p.status).label, p.statusStart||'', p.statusEnd||'', p.notes||'']));
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{wch:14},{wch:10},{wch:34},{wch:14},{wch:12},{wch:12},{wch:20}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'قوة السرية');
+  XLSX.writeFile(wb, 'قوة-سرية-أوباري-'+todayStr()+'.xlsx');
+  toast('تم تصدير ملف Excel');
+}
+
+/* ================= التمام اليومي ================= */
+function reportContent(){
+  const d = new Date().toLocaleDateString('ar-LY',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const counts = k => persons.filter(p=>p.status===k);
+  let lines = [];
+  lines.push('تمام سرية أوباري');
+  lines.push(d);
+  lines.push('———————————————');
+  lines.push('إجمالي القوة: ' + persons.length);
+  lines.push('قوة عمومية: ' + counts('force').length);
+  Object.keys(SECTIONS).forEach(k=>{
+    if(k==='force') return;
+    const list = counts(k);
+    if(!list.length) return;
+    lines.push('');
+    lines.push(SECTIONS[k].label + ' (' + list.length + '):');
+    list.forEach((p,i)=>{
+      let ln = (i+1) + '. ' + (p.rank?p.rank+' ':'') + p.name + ' (' + p.militaryId + ')';
+      if(p.statusStart) ln += ' — منذ ' + arDays(daysSince(p.statusStart));
+      if(p.statusEnd)   ln += '، حتى ' + fmtDateShort(p.statusEnd);
+      if(isOverdue(p))  ln += ' ⚠ متجاوز ' + arDays(overdueDays(p));
+      lines.push(ln);
+    });
+  });
+  const od = persons.filter(isOverdue);
+  if(od.length){
+    lines.push('');
+    lines.push('⚠ المتجاوزون (' + od.length + '):');
+    od.forEach((p,i)=>lines.push((i+1)+'. '+(p.rank?p.rank+' ':'')+p.name+' ('+p.militaryId+') — '+secMeta(p.status).label+'، متجاوز '+arDays(overdueDays(p))));
+  }
+  const ns = persons.filter(p=>(p.notes||'').includes('لايتقاضى'));
+  if(ns.length){ lines.push(''); lines.push('لا يتقاضون مرتبات ('+ns.length+'): '+ns.map(p=>p.name).join('، ')); }
+  lines.push('');
+  lines.push('آمر سرية أوباري');
+  return lines.join('\n');
+}
+function renderReport(){
+  $('reportDate').textContent = new Date().toLocaleDateString('ar-LY',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  $('reportText').textContent = reportContent();
+}
+function copyReport(){
+  const txt = reportContent();
+  const done = ()=>toast('تم نسخ التمام — جاهز للصق في واتساب');
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(()=>fallbackCopy(txt, done)); }
+  else fallbackCopy(txt, done);
+}
+function fallbackCopy(txt, cb){
+  const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); cb(); }catch(e){ toast('تعذر النسخ', false); }
+  ta.remove();
+}
+function printReport(){
+  $('printArea').innerHTML = '<div class="print-header"><img src="'+LOGO_B64+'" alt=""><h2>القيادة العامة للقوات المسلحة الليبية</h2><h2>سرية أوباري — التمام اليومي</h2><div class="gold-rule"></div></div>'
+    + '<pre style="white-space:pre-wrap;font-family:Cairo,sans-serif;font-size:13px;line-height:2;">'+esc(reportContent())+'</pre>'
+    + '<div class="sign-row"><span>آمر السرية<br><br>……………………</span><span>ضابط الصفحة<br><br>……………………</span></div>';
+  setTimeout(()=>window.print(), 200);
+}
+
+/* ================= سجل التنقلات ================= */
+const EV_TYPES = { all:{l:'الكل',i:'📋'}, move:{l:'تنقلات',i:'🔀'}, add:{l:'إضافة',i:'➕'}, edit:{l:'تعديل',i:'✏'}, delete:{l:'حذف',i:'🗑'}, import:{l:'استيراد',i:'📂'}, backup:{l:'نسخ احتياطي',i:'💾'} };
+const EV_COLORS = { move:'#C9A24B', add:'#5FA35F', edit:'#7FA8C9', delete:'#C05A4A', import:'#9B7BC8', backup:'#4FA3A5' };
+function renderHistory(){
+  $('historyFilters').innerHTML = Object.keys(EV_TYPES).map(k=>
+    '<button class="chip'+(histFilter===k?' active':'')+'" onclick="histFilter=\''+k+'\';renderHistory()">'+EV_TYPES[k].i+' '+EV_TYPES[k].l+'</button>').join('');
+  const q = ($('historySearch').value||'').trim();
+  const list = events.filter(e => (histFilter==='all'||e.type===histFilter) && (!q || e.text.includes(q)));
+  $('historyList').innerHTML = list.length ? list.slice(0,300).map(e=>{
+    const t = EV_TYPES[e.type]||EV_TYPES.all, c = EV_COLORS[e.type]||'#C9A24B';
+    return '<div class="ev"><div class="ev-ico" style="background:'+c+'22;color:'+c+'">'+t.i+'</div>'
+      + '<div class="b">'+esc(e.text)+'</div><div class="t">'+fmtTime(e.ts)+'</div></div>';
+  }).join('') : '<div class="empty-note">لا توجد أحداث مسجلة بعد</div>';
+}
+
+/* ================= الإحصائيات ================= */
+function renderStats(){
+  $('statsDate').textContent = new Date().toLocaleDateString('ar-LY',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const total = persons.length || 1;
+  const ready = countStatus('force');
+  const pct = Math.round(ready/total*100);
+  let h = '<div class="card-box gauge"><h4>نسبة الجاهزية (قوة عمومية)</h4><div class="big">'+pct+'%</div>'
+    + '<div style="color:var(--muted);font-size:13px;">'+ready+' من '+persons.length+' فرد</div>'
+    + '<div class="bar-track" style="margin-top:14px;height:14px;"><div class="bar-fill" style="width:'+pct+'%"></div></div></div>';
+
+  h += '<div class="card-box"><h4>التوزيع حسب الأقسام</h4>';
+  Object.keys(SECTIONS).forEach(k=>{
+    const n = countStatus(k), w = Math.round(n/total*100);
+    h += '<div class="bar-row"><div class="bl"><span>'+SECTIONS[k].icon+' '+SECTIONS[k].label+'</span><b>'+n+' ('+w+'%)</b></div>'
+      + '<div class="bar-track"><div class="bar-fill" style="width:'+w+'%;background:'+SECTIONS[k].color+'"></div></div></div>';
+  });
+  h += '</div>';
+
+  const byRank = {};
+  persons.forEach(p=>{ const r=p.rank||'بدون رتبة'; byRank[r]=(byRank[r]||0)+1; });
+  h += '<div class="card-box"><h4>التوزيع حسب الرتب</h4>';
+  RANKS.filter(r=>byRank[r]).forEach(r=>{
+    const n=byRank[r], w=Math.round(n/total*100);
+    h += '<div class="bar-row"><div class="bl"><span>'+r+'</span><b>'+n+'</b></div>'
+      + '<div class="bar-track"><div class="bar-fill" style="width:'+w+'%"></div></div></div>';
+  });
+  h += '</div>';
+
+  const ns = persons.filter(p=>(p.notes||'').includes('لايتقاضى'));
+  h += '<div class="card-box"><h4>⚠ لا يتقاضون مرتبات ('+ns.length+')</h4>'
+    + (ns.length ? ns.map(p=>'<div class="result-row"><span class="k" style="direction:ltr">'+esc(p.militaryId)+'</span><span class="v">'+esc(p.rank)+' '+esc(p.name)+'</span></div>').join('') : '<div class="empty-note">لا يوجد</div>') + '</div>';
+
+  const od = persons.filter(isOverdue);
+  h += '<div class="card-box" style="border-color:var(--danger)"><h4 style="color:var(--danger)">⛔ المتجاوزون لمدد حالاتهم ('+od.length+')</h4>'
+    + (od.length ? od.map(p=>'<div class="result-row"><span class="k">'+secMeta(p.status).label+' — متجاوز '+arDays(overdueDays(p))+'</span><span class="v">'+esc(p.rank)+' '+esc(p.name)+'</span></div>').join('') : '<div class="empty-note">لا يوجد متجاوزون — الحالة ممتازة</div>') + '</div>';
+
+  $('statsContent').innerHTML = h;
+}
+
+/* ================= كشوف الطباعة ================= */
+function fillPrintSections(){
+  const sel = $('printSection');
+  sel.innerHTML = '<option value="all">كشف عام — كل القوة ('+persons.length+')</option>'
+    + Object.keys(SECTIONS).map(k=>'<option value="'+k+'">'+SECTIONS[k].label+' ('+countStatus(k)+')</option>').join('');
+}
+function doPrintRoster(){
+  const k = $('printSection').value;
+  const list = k==='all' ? persons.slice() : persons.filter(p=>p.status===k);
+  list.sort((a,b)=> RANKS.indexOf(b.rank)-RANKS.indexOf(a.rank) || a.militaryId.localeCompare(b.militaryId));
+  const title = k==='all' ? 'الكشف العام بقوة السرية' : 'كشف '+SECTIONS[k].label;
+  const d = new Date().toLocaleDateString('ar-LY',{year:'numeric',month:'long',day:'numeric'});
+  let rows = list.map((p,i)=>'<tr><td>'+(i+1)+'</td><td style="direction:ltr">'+esc(p.militaryId)+'</td><td>'+esc(p.rank)+'</td><td style="text-align:right">'+esc(p.name)+'</td><td>'+(k==='all'?secMeta(p.status).label:(p.statusStart?fmtDateShort(p.statusStart):'—'))+'</td><td>'+esc(p.notes||'')+'</td></tr>').join('');
+  $('printArea').innerHTML =
+      '<div class="print-header"><img src="'+LOGO_B64+'" alt=""><h2>القيادة العامة للقوات المسلحة الليبية</h2><h2>سرية أوباري</h2><h3>'+title+' — '+d+'</h3><div class="gold-rule"></div></div>'
+    + '<table class="print-table"><thead><tr><th>ت</th><th>الرقم العسكري</th><th>الرتبة</th><th>الاسم</th><th>'+(k==='all'?'الحالة':'منذ')+'</th><th>ملاحظات</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    + '<p style="margin-top:10px;font-size:12px;">العدد الإجمالي: '+list.length+' فرد</p>'
+    + '<div class="sign-row"><span>ضابط الصفحة<br><br>……………………</span><span>آمر السرية<br><br>……………………</span></div>';
+  setTimeout(()=>window.print(), 200);
+}
+
+/* ================= الإعدادات ================= */
+async function changePassword(){
+  const n1=$('newPw').value, n2=$('newPw2').value;
+  if(n1.length<6){ toast('كلمة المرور الجديدة قصيرة (6 أحرف على الأقل)', false); return; }
+  if(n1!==n2){ toast('كلمتا المرور الجديدتان غير متطابقتين', false); return; }
+  const { error } = await sb.auth.updateUser({ password: n1 });
+  if(error){ toast('تعذر التغيير: '+error.message, false); return; }
+  $('newPw').value=$('newPw2').value='';
+  addEvent('edit','تغيير كلمة مرور المسؤول');
+  toast('تم تغيير كلمة المرور بنجاح');
+}
+function downloadBackup(){
+  const data = { app:'نظام سرية أوباري', version:3, exportedAt:new Date().toISOString(), persons, events };
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'نسخة-احتياطية-سرية-أوباري-'+todayStr()+'.json';
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('تم تنزيل النسخة الاحتياطية');
+}
+function restoreBackup(ev){
+  const f = ev.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = async e => {
+    try{
+      const data = JSON.parse(e.target.result);
+      if(!data.persons || !Array.isArray(data.persons)) throw 0;
+      persons = data.persons; events = data.events || [];
+      savePersons(); save(LS.events, events);
+      addEvent('backup','استعادة نسخة احتياطية ('+persons.length+' فرد)');
+      renderDashboard();
+      await cloudReplaceAll();
+      toast('تمت الاستعادة: '+persons.length+' فرد');
+    }catch(err){ toast('ملف النسخة غير صالح', false); }
+    ev.target.value='';
+  };
+  rd.readAsText(f);
+}
+function resetData(){
+  $('modalBox').innerHTML = '<h3 style="color:var(--danger);margin-bottom:12px;">⚠ إعادة ضبط النظام</h3>'
+    + '<p style="margin-bottom:18px;line-height:1.8;">سيتم مسح جميع التعديلات والعودة إلى بيانات القوة الأصلية (152 فرداً) وكلمة المرور الافتراضية.<br><b>لا يمكن التراجع!</b></p>'
+    + '<div class="modal-btns"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>'
+    + '<button class="btn btn-danger-solid" onclick="confirmReset()">نعم، إعادة الضبط</button></div>';
+  $('modal').classList.add('show');
+}
+async function confirmReset(){
+  persons = DEFAULT_PERSONS.map(x => ({ id:String(x.militaryId), militaryId:String(x.militaryId), rank:x.rank||'', name:x.name||'', notes:x.notes||'', status:'force', statusStart:null, statusEnd:null }));
+  events = []; selected.clear();
+  save(LS.persons, persons); save(LS.events, events);
+  closeModal(); renderDashboard();
+  await cloudReplaceAll();
+  if(ONLINE) sb.from('events').delete().not('id','is',null).then(()=>{});
+  toast('تمت إعادة الضبط إلى البيانات الأصلية');
+}
+
+/* ================= التهيئة ================= */
+window.addEventListener('DOMContentLoaded', async ()=>{
+  $('wmLogo').src = LOGO_B64;
+  document.querySelectorAll('.logoImg').forEach(im=>im.src=LOGO_B64);
+  $('moveTo').innerHTML = Object.keys(SECTIONS).map(k=>'<option value="'+k+'">'+SECTIONS[k].icon+' '+SECTIONS[k].label+'</option>').join('');
+  $('pubSearch').addEventListener('input', publicSearch);
+  $('pubSearch').addEventListener('keydown', e=>{ if(e.key==='Enter') publicSearch(); });
+  $('pwInput').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+  $('modal').addEventListener('click', e=>{ if(e.target.id==='modal') closeModal(); });
+  // فتح مباشر عبر رابط QR (?id=)
+  const qid = new URLSearchParams(location.search).get('id');
+  showView('search');
+  await cloudLoad();
+  const { data:{ session } } = await sb.auth.getSession();
+  if(qid){ $('pubSearch').value=qid; publicSearch(); }
+  else if(session){ await seedIfEmpty(); showView('admin'); }
+});
+</script>
+</body>
+</html>
